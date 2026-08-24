@@ -20,6 +20,8 @@ Two account roles use the same app:
 - **Blind user:** camera provisioning, spoken scene guidance, trusted-contact management, an emergency button, and offline wake-word SOS.
 - **Guardian:** secure contact linking, high-priority notifications, emergency details, the latest protected camera snapshot, and a live map while the alert is active.
 
+For a non-technical, screen-by-screen explanation suitable for demonstrations and client handoff, see the [Client App Guide](docs/CLIENT_APP_GUIDE.md).
+
 ```mermaid
 flowchart LR
   Cam[ESP32-CAM] -->|Local Wi-Fi JPEG| App[Flutter Android app]

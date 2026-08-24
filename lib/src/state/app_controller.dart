@@ -471,7 +471,11 @@ class AppController extends Notifier<AppState> {
         longitude: position.longitude,
         accuracy: position.accuracy,
       );
-    } catch (_) {}
+    } catch (_) {
+      // A guardian may have resolved the alert since the previous upload.
+      // Refreshing lets the blind user's screen and safety service close cleanly.
+      await refreshActiveAlerts();
+    }
   }
 
   Future<void> closeAlert(String action) => _guard(() async {
@@ -510,7 +514,17 @@ class AppController extends Notifier<AppState> {
     try {
       final alerts = await _api.activeAlerts();
       if (alerts.isEmpty) {
+        final closedRemoteAlert = state.activeAlert != null;
         state = state.copyWith(clearAlert: true);
+        if (closedRemoteAlert && state.session?.role == UserRole.blindUser) {
+          _locationTimer?.cancel();
+          _locationTimer = null;
+          await _foreground.stop();
+          if (state.isAssisting || _alwaysOnWakeWordEnabled) {
+            await _startVoiceEmergencyDetection();
+            await _foreground.start();
+          }
+        }
         return;
       }
       state = state.copyWith(activeAlert: alerts.first);

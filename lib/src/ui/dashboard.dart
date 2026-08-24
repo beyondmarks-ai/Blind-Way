@@ -645,7 +645,7 @@ class ContactHome extends ConsumerWidget {
           ),
         const SizedBox(height: 16),
         const Text(
-          'Live location refreshes every five seconds during an active alert. Emergency snapshots are private, visible only to linked guardians, and deleted when the alert closes or after 30 days.',
+          'Live location refreshes every 15 seconds during an active alert. Emergency snapshots are private, visible only to linked guardians, and deleted when the alert closes or after 30 days.',
         ),
       ],
     );
