@@ -1,0 +1,29 @@
+{
+  "name": "blind-way-aws-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && esbuild src/handler.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/index.js && esbuild src/speech-stream-handler.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/speech-stream.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.883.0",
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/client-secrets-manager": "^3.883.0",
+    "@aws-sdk/client-sqs": "^3.883.0",
+    "@aws-sdk/lib-dynamodb": "^3.883.0",
+    "google-auth-library": "^10.3.0",
+    "jose": "^6.2.10",
+    "sarvamai": "^1.1.8",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152",
+    "@types/node": "^22.18.1",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

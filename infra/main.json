@@ -1,0 +1,446 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.45.15.27210",
+      "templateHash": "18193137044851835430"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "defaultValue": "blindway",
+      "metadata": {
+        "description": "Short product prefix used in globally unique resource names."
+      }
+    },
+    "deploymentStamp": {
+      "type": "string",
+      "defaultValue": "v2",
+      "metadata": {
+        "description": "Stable stamp used to create a fresh globally unique resource set after a failed deployment."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Primary region for API and data resources."
+      }
+    },
+    "notificationLocation": {
+      "type": "string",
+      "defaultValue": "centralindia",
+      "metadata": {
+        "description": "Region for Azure Notification Hubs."
+      }
+    },
+    "azureOpenAiResourceGroup": {
+      "type": "string",
+      "defaultValue": "Beyond_Marks",
+      "metadata": {
+        "description": "Resource group containing the existing Azure OpenAI account."
+      }
+    },
+    "azureOpenAiAccountName": {
+      "type": "string",
+      "defaultValue": "Rakesh",
+      "metadata": {
+        "description": "Existing Azure OpenAI account name."
+      }
+    },
+    "azureOpenAiDeployment": {
+      "type": "string",
+      "defaultValue": "gpt-5.1",
+      "metadata": {
+        "description": "Existing vision deployment name."
+      }
+    },
+    "auth0IssuerBaseUrl": {
+      "type": "string",
+      "defaultValue": "https://dev-82360je2mhru6r5g.us.auth0.com",
+      "metadata": {
+        "description": "Auth0 issuer base URL. Configure after creating the Auth0 application."
+      }
+    }
+  },
+  "variables": {
+    "suffix": "[take(uniqueString(subscription().id, resourceGroup().id, parameters('deploymentStamp')), 8)]",
+    "compactPrefix": "[replace(parameters('prefix'), '-', '')]",
+    "storageName": "[take(format('{0}{1}', variables('compactPrefix'), variables('suffix')), 24)]",
+    "functionName": "[format('{0}-api-win-{1}', parameters('prefix'), variables('suffix'))]",
+    "cosmosName": "[format('{0}-db-{1}', parameters('prefix'), variables('suffix'))]",
+    "keyVaultName": "[take(format('{0}-kv-{1}', parameters('prefix'), variables('suffix')), 24)]",
+    "insightsName": "[format('{0}-insights-{1}', parameters('prefix'), variables('suffix'))]",
+    "logName": "[format('{0}-logs-{1}', parameters('prefix'), variables('suffix'))]",
+    "pubsubName": "[format('{0}-realtime-{1}', parameters('prefix'), variables('suffix'))]",
+    "notificationNamespaceName": "[format('{0}-notify-{1}', parameters('prefix'), variables('suffix'))]",
+    "notificationHubName": "[format('{0}-android', parameters('prefix'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('storageName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": true,
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('logName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('insightsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-consumption-win-{1}', parameters('prefix'), variables('suffix'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts",
+      "apiVersion": "2024-05-15",
+      "name": "[variables('cosmosName')]",
+      "location": "[parameters('location')]",
+      "kind": "GlobalDocumentDB",
+      "properties": {
+        "databaseAccountOfferType": "Standard",
+        "enableAutomaticFailover": false,
+        "disableKeyBasedMetadataWriteAccess": true,
+        "capabilities": [
+          {
+            "name": "EnableServerless"
+          }
+        ],
+        "consistencyPolicy": {
+          "defaultConsistencyLevel": "Session"
+        },
+        "locations": [
+          {
+            "locationName": "[parameters('location')]",
+            "failoverPriority": 0,
+            "isZoneRedundant": false
+          }
+        ],
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}', variables('cosmosName'), 'blindway')]",
+      "properties": {
+        "resource": {
+          "id": "blindway"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'blindway', 'items')]",
+      "properties": {
+        "resource": {
+          "id": "items",
+          "partitionKey": {
+            "paths": [
+              "/partitionKey"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": -1,
+          "indexingPolicy": {
+            "indexingMode": "consistent",
+            "includedPaths": [
+              {
+                "path": "/*"
+              }
+            ],
+            "excludedPaths": [
+              {
+                "path": "/\"_etag\"/?"
+              }
+            ]
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'blindway')]"
+      ]
+    },
+    {
+      "type": "Microsoft.SignalRService/webPubSub",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('pubsubName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Free_F1",
+        "tier": "Free",
+        "capacity": 1
+      },
+      "properties": {
+        "disableLocalAuth": false,
+        "publicNetworkAccess": "Enabled",
+        "tls": {
+          "clientCertEnabled": false
+        }
+      }
+    },
+    {
+      "type": "Microsoft.NotificationHubs/namespaces",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('notificationNamespaceName')]",
+      "location": "[parameters('notificationLocation')]",
+      "sku": {
+        "name": "Standard",
+        "tier": "Standard"
+      },
+      "properties": {
+        "namespaceType": "NotificationHub"
+      }
+    },
+    {
+      "type": "Microsoft.NotificationHubs/namespaces/notificationHubs",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}/{1}', variables('notificationNamespaceName'), variables('notificationHubName'))]",
+      "location": "[parameters('notificationLocation')]",
+      "properties": {},
+      "dependsOn": [
+        "[resourceId('Microsoft.NotificationHubs/namespaces', variables('notificationNamespaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "enableRbacAuthorization": true,
+        "enablePurgeProtection": true,
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 30,
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "publicNetworkAccess": "Enabled",
+        "accessPolicies": []
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[variables('functionName')]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-consumption-win-{1}', parameters('prefix'), variables('suffix')))]",
+        "httpsOnly": true,
+        "publicNetworkAccess": "Enabled",
+        "siteConfig": {
+          "ftpsState": "Disabled",
+          "minTlsVersion": "1.2",
+          "http20Enabled": true,
+          "alwaysOn": false,
+          "appSettings": [
+            {
+              "name": "FUNCTIONS_EXTENSION_VERSION",
+              "value": "~4"
+            },
+            {
+              "name": "FUNCTIONS_WORKER_RUNTIME",
+              "value": "node"
+            },
+            {
+              "name": "AzureWebJobsFeatureFlags",
+              "value": "EnableWorkerIndexing"
+            },
+            {
+              "name": "WEBSITE_NODE_DEFAULT_VERSION",
+              "value": "~22"
+            },
+            {
+              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+              "value": "false"
+            },
+            {
+              "name": "ENABLE_ORYX_BUILD",
+              "value": "false"
+            },
+            {
+              "name": "WEBSITE_RUN_FROM_PACKAGE",
+              "value": "1"
+            },
+            {
+              "name": "AzureWebJobsStorage",
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2023-05-01').keys[0].value)]"
+            },
+            {
+              "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2023-05-01').keys[0].value)]"
+            },
+            {
+              "name": "WEBSITE_CONTENTSHARE",
+              "value": "[take(format('{0}{1}wincontent', variables('compactPrefix'), variables('suffix')), 63)]"
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('insightsName')), '2020-02-02').ConnectionString]"
+            },
+            {
+              "name": "AUTH0_ISSUER_BASE_URL",
+              "value": "[parameters('auth0IssuerBaseUrl')]"
+            },
+            {
+              "name": "AUTH0_AUDIENCE",
+              "value": "https://api.blindway.beyondmarks.ai"
+            },
+            {
+              "name": "ALLOW_DEBUG_AUTH",
+              "value": "false"
+            },
+            {
+              "name": "AZURE_OPENAI_ENDPOINT",
+              "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('azureOpenAiResourceGroup')), 'Microsoft.CognitiveServices/accounts', parameters('azureOpenAiAccountName')), '2023-05-01').endpoint]"
+            },
+            {
+              "name": "AZURE_OPENAI_DEPLOYMENT",
+              "value": "[parameters('azureOpenAiDeployment')]"
+            },
+            {
+              "name": "SARVAM_TTS_MODEL",
+              "value": "bulbul:v3"
+            },
+            {
+              "name": "SARVAM_TTS_SPEAKER",
+              "value": "ritu"
+            },
+            {
+              "name": "COSMOS_ENDPOINT",
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName')), '2024-05-15').documentEndpoint]"
+            },
+            {
+              "name": "COSMOS_DATABASE",
+              "value": "blindway"
+            },
+            {
+              "name": "WEB_PUBSUB_CONNECTION_STRING",
+              "value": "[listKeys(resourceId('Microsoft.SignalRService/webPubSub', variables('pubsubName')), '2024-03-01').primaryConnectionString]"
+            },
+            {
+              "name": "WEB_PUBSUB_HUB",
+              "value": "alerts"
+            },
+            {
+              "name": "NOTIFICATION_HUB_NAME",
+              "value": "[variables('notificationHubName')]"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]",
+        "[resourceId('Microsoft.Insights/components', variables('insightsName'))]",
+        "[resourceId('Microsoft.NotificationHubs/namespaces/notificationHubs', variables('notificationNamespaceName'), variables('notificationHubName'))]",
+        "[resourceId('Microsoft.Web/serverfarms', format('{0}-consumption-win-{1}', parameters('prefix'), variables('suffix')))]",
+        "[resourceId('Microsoft.SignalRService/webPubSub', variables('pubsubName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}', variables('cosmosName'), guid(resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName')), resourceId('Microsoft.Web/sites', variables('functionName')), 'data-contributor'))]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionName')), '2023-12-01', 'full').identity.principalId]",
+        "roleDefinitionId": "[format('{0}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002', resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName')))]",
+        "scope": "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]",
+        "[resourceId('Microsoft.Web/sites', variables('functionName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "functionAppName": {
+      "type": "string",
+      "value": "[variables('functionName')]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[variables('storageName')]"
+    },
+    "functionPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionName')), '2023-12-01', 'full').identity.principalId]"
+    },
+    "azureOpenAiResourceId": {
+      "type": "string",
+      "value": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('azureOpenAiResourceGroup')), 'Microsoft.CognitiveServices/accounts', parameters('azureOpenAiAccountName'))]"
+    },
+    "apiBaseUrl": {
+      "type": "string",
+      "value": "[format('https://{0}/api', reference(resourceId('Microsoft.Web/sites', variables('functionName')), '2023-12-01').defaultHostName)]"
+    },
+    "cosmosAccountName": {
+      "type": "string",
+      "value": "[variables('cosmosName')]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('keyVaultName')]"
+    },
+    "notificationNamespaceName": {
+      "type": "string",
+      "value": "[variables('notificationNamespaceName')]"
+    },
+    "notificationHubName": {
+      "type": "string",
+      "value": "[variables('notificationHubName')]"
+    },
+    "webPubSubName": {
+      "type": "string",
+      "value": "[variables('pubsubName')]"
+    }
+  }
+}

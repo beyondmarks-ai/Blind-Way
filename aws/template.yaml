@@ -1,0 +1,379 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Blind Way serverless backend on AWS with Google Vertex AI vision.
+
+Parameters:
+  CodeBucket:
+    Type: String
+  CodeKey:
+    Type: String
+  Auth0Issuer:
+    Type: String
+    Default: https://dev-82360je2mhru6r5g.us.auth0.com/
+  Auth0Audience:
+    Type: String
+    Default: https://api.blindway.beyondmarks.ai
+  GcpProjectId:
+    Type: String
+    Default: blind-way-vision-2026
+  FirebaseProjectId:
+    Type: String
+    Default: blind-way-beyondmarks-2026
+  GeminiModel:
+    Type: String
+    Default: gemini-3.5-flash-lite
+  SarvamApiKey:
+    Type: String
+    NoEcho: true
+
+Resources:
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: blind-way
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAtEpoch
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  SarvamSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Sarvam Bulbul API credential for Blind Way speech.
+      SecretString: !Sub '{"apiKey":"${SarvamApiKey}"}'
+
+  EmergencySnapshotBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteEmergencySnapshots
+            Status: Enabled
+            ExpirationInDays: 30
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  SmsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: blind-way-sms-escalation
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400
+      SqsManagedSseEnabled: true
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: blind-way-api-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BlindWayRuntime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:BatchGetItem
+                  - dynamodb:TransactWriteItems
+                Resource:
+                  - !GetAtt DataTable.Arn
+                  - !Sub '${DataTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt SmsQueue.Arn
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SarvamSecret
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub '${EmergencySnapshotBucket.Arn}/alerts/*'
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: blind-way-api
+      Description: Blind Way API, emergency coordination, Gemini vision, and Sarvam speech.
+      Runtime: nodejs24.x
+      Architectures: [arm64]
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 1024
+      Timeout: 25
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DataTable
+          SMS_QUEUE_URL: !Ref SmsQueue
+          SARVAM_SECRET_ARN: !Ref SarvamSecret
+          SARVAM_TTS_MODEL: bulbul:v3
+          SARVAM_TTS_SPEAKER: ritu
+          SNAPSHOT_BUCKET: !Ref EmergencySnapshotBucket
+          GOOGLE_APPLICATION_CREDENTIALS: /var/task/gcp-wif.json
+          GCP_PROJECT_ID: !Ref GcpProjectId
+          GCP_VERTEX_LOCATION: global
+          GCP_FIREBASE_PROJECT_ID: !Ref FirebaseProjectId
+          GEMINI_MODEL: !Ref GeminiModel
+          NODE_OPTIONS: --enable-source-maps
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/blind-way-api
+      RetentionInDays: 30
+
+  SpeechStreamFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: blind-way-speech-stream
+      Description: Authenticated low-latency Sarvam WebSocket speech bridge.
+      Runtime: nodejs24.x
+      Architectures: [arm64]
+      Handler: speech-stream.handler
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 512
+      Timeout: 15
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DataTable
+          SARVAM_SECRET_ARN: !Ref SarvamSecret
+          SARVAM_TTS_MODEL: bulbul:v3
+          SARVAM_TTS_SPEAKER: ritu
+          AUTH0_ISSUER: !Ref Auth0Issuer
+          AUTH0_AUDIENCE: !Ref Auth0Audience
+          NODE_OPTIONS: --enable-source-maps
+
+  SpeechStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/blind-way-speech-stream
+      RetentionInDays: 30
+
+  SpeechStreamUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt SpeechStreamFunction.Arn
+      AuthType: NONE
+      InvokeMode: RESPONSE_STREAM
+
+  SpeechStreamUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SpeechStreamFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  SpeechStreamInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SpeechStreamFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  PublishedVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Description: !Ref CodeKey
+
+  LiveAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref ApiFunction
+      FunctionVersion: !GetAtt PublishedVersion.Version
+      Name: live
+
+  WarmupRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Keeps the Blind Way assistive API warm without reserved concurrency.
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !Ref LiveAlias
+          Id: BlindWayLambda
+
+  WarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LiveAlias
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WarmupRule.Arn
+
+  SmsEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref LiveAlias
+      EventSourceArn: !GetAtt SmsQueue.Arn
+      BatchSize: 5
+      Enabled: true
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: blind-way-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowHeaders: [authorization, content-type, idempotency-key]
+        AllowMethods: [GET, POST, PUT, OPTIONS]
+        MaxAge: 3600
+
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      Name: Auth0
+      AuthorizerType: JWT
+      IdentitySource: ['$request.header.Authorization']
+      JwtConfiguration:
+        Audience: [!Ref Auth0Audience]
+        Issuer: !Ref Auth0Issuer
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Ref LiveAlias
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 29000
+
+  DefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LiveAlias
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  HealthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'GET /health', AuthorizationType: NONE, Target: !Sub 'integrations/${ApiIntegration}' }
+  RegisterDeviceRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/devices/register', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  AnalyzeVisionRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/vision/analyze', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  SpeechRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'GET /v1/speech', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  CreateInviteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/contacts/invites', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  RedeemInviteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/contacts/invites/redeem', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  ContactsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'GET /v1/contacts', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  CreateAlertRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/alerts', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  ActiveAlertsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'GET /v1/alerts/active', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  AlertSnapshotRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'GET /v1/alerts/{id}/snapshot', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  UpdateLocationRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'PUT /v1/alerts/{id}/location', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  AcknowledgeAlertRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/alerts/{id}/acknowledge', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  ResolveAlertRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/alerts/{id}/resolve', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+  CancelAlertRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref HttpApi, RouteKey: 'POST /v1/alerts/{id}/cancel', AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub 'integrations/${ApiIntegration}' }
+
+Outputs:
+  ApiBaseUrl:
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+  SpeechStreamUrl:
+    Value: !GetAtt SpeechStreamUrl.FunctionUrl
+  LambdaRoleArn:
+    Value: !GetAtt LambdaRole.Arn
+  SarvamSecretArn:
+    Value: !Ref SarvamSecret
+  TableName:
+    Value: !Ref DataTable

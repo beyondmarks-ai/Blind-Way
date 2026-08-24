@@ -1,0 +1,23 @@
+import { z } from "zod";
+
+const schema = z.object({
+  AUTH0_ISSUER_BASE_URL: z.string().url().optional(),
+  AUTH0_AUDIENCE: z.string().default("https://api.blindway.beyondmarks.ai"),
+  ALLOW_DEBUG_AUTH: z.enum(["true", "false"]).default("false"),
+  AZURE_OPENAI_ENDPOINT: z.string().url().optional(),
+  AZURE_OPENAI_DEPLOYMENT: z.string().default("gpt-5.1"),
+  SARVAM_API_KEY: z.string().optional(),
+  SARVAM_TTS_MODEL: z.string().default("bulbul:v3"),
+  SARVAM_TTS_SPEAKER: z.string().default("ritu"),
+  COSMOS_ENDPOINT: z.string().url().optional(),
+  COSMOS_DATABASE: z.string().default("blindway"),
+  NOTIFICATION_HUB_CONNECTION_STRING: z.string().optional(),
+  NOTIFICATION_HUB_NAME: z.string().optional(),
+  WEB_PUBSUB_CONNECTION_STRING: z.string().optional(),
+  WEB_PUBSUB_HUB: z.string().default("alerts"),
+  MSG91_AUTH_KEY: z.string().optional(),
+  MSG91_TEMPLATE_ID: z.string().optional(),
+  MSG91_SENDER_ID: z.string().optional(),
+});
+
+export const config = schema.parse(process.env);
