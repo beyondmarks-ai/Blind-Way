@@ -347,7 +347,13 @@ class AppController extends Notifier<AppState> {
       final cue = await _api.analyze(frame, language: state.language);
       state = state.copyWith(currentCue: cue, clearError: true);
       if (_shouldSpeak(cue)) {
-        unawaited(_speech.speak(cue.cue));
+        unawaited(
+          _speech.speak(
+            cue.cue,
+            queueKey: 'vision-guidance',
+            interrupt: cue.risk == RiskLevel.danger,
+          ),
+        );
         _lastSpokenCue = cue.cue;
         if (cue.risk == RiskLevel.caution || cue.risk == RiskLevel.danger) {
           _lastWarningAt = DateTime.now();
@@ -402,6 +408,7 @@ class AppController extends Notifier<AppState> {
     );
     await _speech.speak(
       'Emergency alert in $countdownSeconds seconds. Tap cancel to stop.',
+      interrupt: true,
     );
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final remaining = (state.sosCountdown ?? 1) - 1;
@@ -419,7 +426,7 @@ class AppController extends Notifier<AppState> {
   Future<void> cancelSosCountdown() async {
     _countdownTimer?.cancel();
     state = state.copyWith(clearCountdown: true);
-    await _speech.speak('Emergency alert cancelled');
+    await _speech.speak('Emergency alert cancelled', interrupt: true);
     if (state.isAssisting || _alwaysOnWakeWordEnabled) {
       await _startVoiceEmergencyDetection();
     }
@@ -452,7 +459,10 @@ class AppController extends Notifier<AppState> {
     state = state.copyWith(activeAlert: alert, clearCountdown: true);
     await _foreground.stop();
     await _foreground.start(includeLocation: true);
-    await _speech.speak('Emergency alert sent to your trusted contacts');
+    await _speech.speak(
+      'Emergency alert sent to your trusted contacts',
+      interrupt: true,
+    );
     _locationTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) => _uploadLocation(),
@@ -485,7 +495,7 @@ class AppController extends Notifier<AppState> {
     if (action == 'acknowledge' &&
         state.session?.role == UserRole.emergencyContact) {
       await refreshActiveAlerts();
-      await _speech.speak('Emergency acknowledged');
+      await _speech.speak('Emergency acknowledged', interrupt: true);
       return;
     }
     _locationTimer?.cancel();
@@ -498,6 +508,7 @@ class AppController extends Notifier<AppState> {
     }
     await _speech.speak(
       'Emergency ${action == 'resolve' ? 'resolved' : 'cancelled'}',
+      interrupt: true,
     );
   });
 
