@@ -114,6 +114,8 @@ Enable Firebase phone authentication before running the app:
 
 The Android debug/release-test SHA-1 and SHA-256 fingerprints are already registered. Firebase sends the SMS and the app verifies it directly without opening a browser. Phone numbers are processed by Google for authentication and abuse prevention, so the production privacy notice must disclose this.
 
+Real verification SMS messages require the Firebase project to use the Blaze plan with a linked Cloud Billing account. Until billing is enabled, configure fictional test phone numbers and fixed codes under **Authentication > Sign-in method > Phone > Phone numbers for testing**; these exercise the complete app sign-in flow without sending or charging for an SMS.
+
 Firebase UIDs differ from IDs used by the previous authentication provider. Development users must sign in again and create new guardian links; production data requires a deliberate identity-mapping migration before switching existing users.
 
 Run the app:
