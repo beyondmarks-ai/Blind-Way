@@ -128,6 +128,7 @@ class AppController extends Notifier<AppState> {
   Timer? _alertRefreshTimer;
   StreamSubscription<RemoteMessage>? _notificationSubscription;
   StreamSubscription<RemoteMessage>? _foregroundNotificationSubscription;
+  StreamSubscription<String?>? _authTokenSubscription;
   bool _visionInFlight = false;
   Uint8List? _latestFrame;
   DateTime? _latestFrameCapturedAt;
@@ -160,6 +161,7 @@ class AppController extends Notifier<AppState> {
       _alertRefreshTimer?.cancel();
       _notificationSubscription?.cancel();
       _foregroundNotificationSubscription?.cancel();
+      _authTokenSubscription?.cancel();
       unawaited(_voice.stop());
     });
     Future.microtask(_initialize);
@@ -172,6 +174,7 @@ class AppController extends Notifier<AppState> {
     final camera = await _camera.restore();
     final bluetoothAudio = await _bluetooth.hasBluetoothAudio();
     state = state.copyWith(camera: camera, bluetoothAudio: bluetoothAudio);
+    _authTokenSubscription = _auth.tokenChanges.listen(_api.setAccessToken);
     FirebaseMessaging.instance.onTokenRefresh.listen(_registerPushToken);
     _notificationSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
       (_) => refreshActiveAlerts(),
@@ -182,19 +185,6 @@ class AppController extends Notifier<AppState> {
   }
 
   void selectRole(UserRole role) => state = state.copyWith(selectedRole: role);
-
-  Future<void> login() => _login();
-
-  Future<void> loginWithPhoneOtp() => _login(connection: 'sms');
-
-  Future<void> _login({String? connection}) async {
-    final role = state.selectedRole;
-    if (role == null) return;
-    await _guard(() async {
-      final session = await _auth.login(role, connection: connection);
-      await _completeLogin(session);
-    });
-  }
 
   Future<bool> requestPhoneOtp(String phoneNumber) async {
     state = state.copyWith(isBusy: true, clearError: true);

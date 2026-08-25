@@ -31,7 +31,7 @@ describe("AWS API handler", () => {
     expect(JSON.parse(response.body)).toMatchObject({ status: "ok", platform: "aws", vision: "google-vertex-ai" });
   });
 
-  it("rejects protected operations without an Auth0 subject", async () => {
+  it("rejects protected operations without a Firebase subject", async () => {
     const response = await handler(event("GET /v1/contacts") as never) as { statusCode: number; body: string };
     expect(response.statusCode).toBe(401);
   });

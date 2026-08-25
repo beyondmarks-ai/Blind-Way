@@ -63,23 +63,17 @@ Anjali selects this role. It gives her access to:
 - alert acknowledgement and resolution;
 - trusted-user linking.
 
-### Login method 1 — Continue securely
+### Sign in with Firebase phone OTP
 
 1. Select the correct role.
-2. Tap **Continue securely**.
-3. The secure Auth0 login page opens.
-4. Complete the enabled login method, such as Google or email.
-5. After successful authentication, Blind Way returns to the app.
-
-### Login method 2 — Sign in with phone OTP
-
-1. Select the correct role.
-2. Tap **Sign in with phone OTP**.
+2. Tap **Continue with phone OTP**.
 3. Enter the full phone number with country code.
    - Example: `+919876543210`
 4. Tap **Send code**.
 5. Enter the six-digit SMS code.
 6. Tap **Verify**.
+
+Firebase verifies the number directly inside Blind Way. No browser login page opens.
 
 Use **Change number** if the wrong phone number was entered. Use **Cancel** to close the OTP window.
 

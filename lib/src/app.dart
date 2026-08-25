@@ -117,36 +117,18 @@ class SignInScreen extends ConsumerWidget {
                   FilledButton.icon(
                     onPressed: state.selectedRole == null || state.isBusy
                         ? null
-                        : controller.login,
-                    icon: state.isBusy
-                        ? const SizedBox.square(
-                            dimension: 22,
-                            child: CircularProgressIndicator(strokeWidth: 3),
-                          )
-                        : const Icon(Icons.login),
-                    label: const Text('Continue securely'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: state.selectedRole == null || state.isBusy
-                        ? null
                         : () => showDialog<void>(
                             context: context,
                             barrierDismissible: false,
                             builder: (_) => const PhoneOtpDialog(),
                           ),
                     icon: const Icon(Icons.sms_outlined),
-                    label: const Text('Sign in with phone OTP'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(56),
-                      textStyle: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
+                    label: const Text('Continue with phone OTP'),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Firebase sends a verification code directly to your phone. No browser sign-in is required.',
+                    textAlign: TextAlign.center,
                   ),
                   if (state.error != null) ...[
                     const SizedBox(height: 16),

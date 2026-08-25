@@ -2,7 +2,7 @@ param(
   [string]$ResourceGroup = 'blind-way-rg',
   [string]$Location = 'centralindia',
   [string]$ResourceLocation = 'centralindia',
-  [string]$Auth0IssuerBaseUrl = 'https://example.invalid'
+  [string]$FirebaseProjectId = 'blind-way-beyondmarks-2026'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,7 +12,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Azure resource group creation failed.' }
 az deployment group create `
   --resource-group $ResourceGroup `
   --template-file "$PSScriptRoot\main.bicep" `
-  --parameters auth0IssuerBaseUrl=$Auth0IssuerBaseUrl location=$ResourceLocation notificationLocation=$ResourceLocation `
+  --parameters firebaseProjectId=$FirebaseProjectId location=$ResourceLocation notificationLocation=$ResourceLocation `
   --output table
 if ($LASTEXITCODE -ne 0) { throw 'Azure resource deployment failed.' }
 

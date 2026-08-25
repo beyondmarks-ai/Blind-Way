@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.45.15.27210",
-      "templateHash": "18193137044851835430"
+      "templateHash": "497303858830183861"
     }
   },
   "parameters": {
@@ -58,11 +58,11 @@
         "description": "Existing vision deployment name."
       }
     },
-    "auth0IssuerBaseUrl": {
+    "firebaseProjectId": {
       "type": "string",
-      "defaultValue": "https://dev-82360je2mhru6r5g.us.auth0.com",
+      "defaultValue": "blind-way-beyondmarks-2026",
       "metadata": {
-        "description": "Auth0 issuer base URL. Configure after creating the Auth0 application."
+        "description": "Firebase project whose ID tokens are accepted by the API."
       }
     }
   },
@@ -327,12 +327,8 @@
               "value": "[reference(resourceId('Microsoft.Insights/components', variables('insightsName')), '2020-02-02').ConnectionString]"
             },
             {
-              "name": "AUTH0_ISSUER_BASE_URL",
-              "value": "[parameters('auth0IssuerBaseUrl')]"
-            },
-            {
-              "name": "AUTH0_AUDIENCE",
-              "value": "https://api.blindway.beyondmarks.ai"
+              "name": "FIREBASE_PROJECT_ID",
+              "value": "[parameters('firebaseProjectId')]"
             },
             {
               "name": "ALLOW_DEBUG_AUTH",

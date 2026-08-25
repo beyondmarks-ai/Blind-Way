@@ -28,8 +28,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["auth0Domain"] = project.findProperty("AUTH0_DOMAIN")?.toString() ?: "example.invalid"
-        manifestPlaceholders["auth0Scheme"] = "https"
     }
 
     buildTypes {

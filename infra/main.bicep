@@ -19,8 +19,8 @@ param azureOpenAiAccountName string = 'Rakesh'
 @description('Existing vision deployment name.')
 param azureOpenAiDeployment string = 'gpt-5.1'
 
-@description('Auth0 issuer base URL. Configure after creating the Auth0 application.')
-param auth0IssuerBaseUrl string = 'https://dev-82360je2mhru6r5g.us.auth0.com'
+@description('Firebase project whose ID tokens are accepted by the API.')
+param firebaseProjectId string = 'blind-way-beyondmarks-2026'
 
 var suffix = take(uniqueString(subscription().id, resourceGroup().id, deploymentStamp), 8)
 var compactPrefix = replace(prefix, '-', '')
@@ -178,8 +178,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}' }
         { name: 'WEBSITE_CONTENTSHARE', value: take('${compactPrefix}${suffix}wincontent', 63) }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
-        { name: 'AUTH0_ISSUER_BASE_URL', value: auth0IssuerBaseUrl }
-        { name: 'AUTH0_AUDIENCE', value: 'https://api.blindway.beyondmarks.ai' }
+        { name: 'FIREBASE_PROJECT_ID', value: firebaseProjectId }
         { name: 'ALLOW_DEBUG_AUTH', value: 'false' }
         { name: 'AZURE_OPENAI_ENDPOINT', value: existingOpenAi.properties.endpoint }
         { name: 'AZURE_OPENAI_DEPLOYMENT', value: azureOpenAiDeployment }

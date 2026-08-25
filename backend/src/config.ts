@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 const schema = z.object({
-  AUTH0_ISSUER_BASE_URL: z.string().url().optional(),
-  AUTH0_AUDIENCE: z.string().default("https://api.blindway.beyondmarks.ai"),
+  FIREBASE_PROJECT_ID: z.string().min(1).optional(),
   ALLOW_DEBUG_AUTH: z.enum(["true", "false"]).default("false"),
   AZURE_OPENAI_ENDPOINT: z.string().url().optional(),
   AZURE_OPENAI_DEPLOYMENT: z.string().default("gpt-5.1"),

@@ -15,15 +15,19 @@ export async function authenticate(request: HttpRequest): Promise<AuthenticatedU
       name: request.headers.get("x-debug-name") ?? "Debug user",
     };
   }
-  if (!token || !config.AUTH0_ISSUER_BASE_URL) {
+  if (!token || !config.FIREBASE_PROJECT_ID) {
     throw new HttpError(401, "Authentication is required.");
   }
-  const issuer = `${config.AUTH0_ISSUER_BASE_URL.replace(/\/$/, "")}/`;
-  jwks ??= createRemoteJWKSet(new URL(`${issuer}.well-known/jwks.json`));
+  const issuer = `https://securetoken.google.com/${config.FIREBASE_PROJECT_ID}`;
+  jwks ??= createRemoteJWKSet(
+    new URL(
+      "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+    ),
+  );
   try {
     const verified = await jwtVerify(token, jwks, {
       issuer,
-      audience: config.AUTH0_AUDIENCE,
+      audience: config.FIREBASE_PROJECT_ID,
       algorithms: ["RS256"],
     });
     if (!verified.payload.sub) throw new Error("Missing subject");

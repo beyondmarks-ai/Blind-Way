@@ -17,9 +17,12 @@ declare const awslambda: {
   streamifyResponse<T>(handler: (event: T, stream: LambdaResponseStream) => Promise<void>): unknown;
 };
 
-const issuer = requiredEnv("AUTH0_ISSUER").replace(/\/?$/, "/");
-const audience = requiredEnv("AUTH0_AUDIENCE");
-const jwks = createRemoteJWKSet(new URL(".well-known/jwks.json", issuer));
+const firebaseProjectId = requiredEnv("GCP_FIREBASE_PROJECT_ID");
+const issuer = `https://securetoken.google.com/${firebaseProjectId}`;
+const audience = firebaseProjectId;
+const jwks = createRemoteJWKSet(new URL(
+  "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+));
 
 function requiredEnv(name: string) {
   const value = process.env[name];

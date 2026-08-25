@@ -37,11 +37,38 @@ async function query<T>(PK: string, prefix?: string) {
 }
 
 export const repository = {
-  async ensureProfile(id: string, role: Role, displayName: string) {
+  async ensureProfile(
+    id: string,
+    role: Role,
+    displayName: string,
+    identity: { phone?: string; phoneVerified?: boolean } = {},
+  ) {
     const existing = await this.profile(id);
-    if (existing) return existing;
+    if (existing) {
+      const updated: Profile = {
+        ...existing,
+        displayName,
+        phone: identity.phone ?? existing.phone,
+        phoneVerified: identity.phoneVerified ?? existing.phoneVerified,
+        updatedAt: new Date().toISOString(),
+      };
+      await db.send(new PutCommand({
+        TableName: tableName,
+        Item: { PK: `USER#${id}`, SK: "PROFILE", ...updated },
+      }));
+      return updated;
+    }
     const now = new Date().toISOString();
-    const profile: Profile = { id, type: "profile", role, displayName, phoneVerified: false, createdAt: now, updatedAt: now };
+    const profile: Profile = {
+      id,
+      type: "profile",
+      role,
+      displayName,
+      phone: identity.phone,
+      phoneVerified: identity.phoneVerified ?? false,
+      createdAt: now,
+      updatedAt: now,
+    };
     await db.send(new PutCommand({
       TableName: tableName,
       Item: { PK: `USER#${id}`, SK: "PROFILE", ...profile },

@@ -74,7 +74,13 @@ function user(event: ApiEvent) {
   const claims = event.requestContext.authorizer?.jwt?.claims;
   const sub = typeof claims?.sub === "string" ? claims.sub : "";
   if (!sub) throw new HttpError(401, "Authentication is required.");
-  return { sub, name: typeof claims.name === "string" ? claims.name : undefined };
+  const phone = typeof claims.phone_number === "string" ? claims.phone_number : undefined;
+  return {
+    sub,
+    name: typeof claims.name === "string" ? claims.name : undefined,
+    phone,
+    phoneVerified: Boolean(phone),
+  };
 }
 
 async function requireProfile(event: ApiEvent) {
@@ -106,7 +112,10 @@ async function api(event: ApiEvent): Promise<APIGatewayProxyResultV2> {
     const displayName = required(body.displayName, "displayName").slice(0, 100);
     const pushToken = required(body.pushToken, "pushToken");
     if (pushToken.length < 20 || pushToken.length > 4096) throw new HttpError(400, "pushToken is invalid.");
-    const profile = await repository.ensureProfile(current.sub, role, displayName);
+    const profile = await repository.ensureProfile(current.sub, role, displayName, {
+      phone: current.phone,
+      phoneVerified: current.phoneVerified,
+    });
     if (profile.role !== role) throw new HttpError(409, "The account role cannot be changed after registration.");
     const device: Device = {
       id: createHash("sha256").update(`${current.sub}:${pushToken}`).digest("hex"),

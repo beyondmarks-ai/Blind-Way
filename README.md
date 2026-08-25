@@ -13,7 +13,7 @@
 
 ## What it does
 
-Blind Way connects a Flutter Android app to an ESP32-CAM worn by the blind user. The app captures camera frames over local Wi-Fi, requests concise path guidance from Google Vertex AI through an Auth0-protected AWS API, and plays speech through Bluetooth earbuds or the phone. Sarvam supplies the primary natural voice, with Android text-to-speech as the fallback.
+Blind Way connects a Flutter Android app to an ESP32-CAM worn by the blind user. The app captures camera frames over local Wi-Fi, requests concise path guidance from Google Vertex AI through a Firebase Authentication-protected AWS API, and plays speech through Bluetooth earbuds or the phone. Sarvam supplies the primary natural voice, with Android text-to-speech as the fallback.
 
 Two account roles use the same app:
 
@@ -25,7 +25,7 @@ For a non-technical, screen-by-screen explanation suitable for demonstrations an
 ```mermaid
 flowchart LR
   Cam[ESP32-CAM] -->|Local Wi-Fi JPEG| App[Flutter Android app]
-  App -->|Auth0 access token| API[AWS API Gateway + Lambda]
+  App -->|Firebase ID token| API[AWS API Gateway + Lambda]
   API --> Vision[Vertex AI vision]
   API --> Voice[Sarvam streaming speech]
   Voice --> Buds[Bluetooth earbuds]
@@ -75,7 +75,7 @@ Emergency images are encrypted in a private S3 bucket. Only the blind user and c
 
 | Path | Purpose |
 |---|---|
-| `lib/` | Flutter UI, Auth0, camera, audio, wake word, SOS, maps, and notifications |
+| `lib/` | Flutter UI, Firebase Authentication, camera, audio, wake word, SOS, maps, and notifications |
 | `CameraWebServer/` | AI Thinker ESP32-CAM firmware, BLE Wi-Fi provisioning, mDNS, and protected capture endpoints |
 | `aws_backend/` | TypeScript Lambda handlers for vision, speech, alerts, contacts, and notifications |
 | `aws/` | CloudFormation and PowerShell deployment automation |
@@ -89,7 +89,7 @@ Emergency images are encrypted in a private S3 bucket. Only the blind user and c
 - AWS CLI authenticated to the deployment account
 - Google Cloud CLI authenticated to a dedicated Google project
 - Firebase Android app for package `ai.beyondmarks.blindway`
-- Auth0 Native application and API
+- Firebase Authentication with Phone sign-in enabled
 - Sarvam API key
 - Picovoice AccessKey and Android keyword file for true always-on detection
 - Arduino IDE or PlatformIO with ESP32 board support for the camera firmware
@@ -105,7 +105,16 @@ Copy-Item android/app/google-services.example.json android/app/google-services.j
 
 Replace every placeholder in `config/app_config.json`. Download the real Firebase `google-services.json` from Firebase Console rather than using the example in a production build. Restrict the Firebase Android API key to the required APIs, package name, and signing-certificate fingerprints.
 
-Auth0 must be configured as a **Native** application using Authorization Code with PKCE. Create an API audience matching `AUTH0_AUDIENCE`, register the Android callback/logout URLs, and never place an Auth0 client secret in the APK.
+Enable Firebase phone authentication before running the app:
+
+1. Open `https://console.firebase.google.com/project/blind-way-beyondmarks-2026/authentication/providers`.
+2. Click **Get started** if Authentication has not been initialized.
+3. Open **Phone**, enable it, and save.
+4. Under Authentication settings, allow the SMS regions where the app will operate, including India for `+91` testing.
+
+The Android debug/release-test SHA-1 and SHA-256 fingerprints are already registered. Firebase sends the SMS and the app verifies it directly without opening a browser. Phone numbers are processed by Google for authentication and abuse prevention, so the production privacy notice must disclose this.
+
+Firebase UIDs differ from IDs used by the previous authentication provider. Development users must sign in again and create new guardian links; production data requires a deliberate identity-mapping migration before switching existing users.
 
 Run the app:
 
@@ -132,7 +141,7 @@ $env:SARVAM_API_KEY = 'your-key-for-this-shell-only'
 .\aws\deploy.ps1
 ```
 
-The deployment stores the Sarvam key in AWS Secrets Manager and prints the API and speech-stream endpoints to place in the local app configuration. API Gateway validates Auth0 JWTs. DynamoDB point-in-time recovery, TTL cleanup, encrypted S3 emergency snapshots, SQS escalation, and CloudWatch logging are defined in the infrastructure templates.
+The deployment stores the Sarvam key in AWS Secrets Manager and prints the API and speech-stream endpoints to place in the local app configuration. API Gateway validates Firebase ID tokens against the Firebase project issuer and audience. DynamoDB point-in-time recovery, TTL cleanup, encrypted S3 emergency snapshots, SQS escalation, and CloudWatch logging are defined in the infrastructure templates.
 
 ## ESP32-CAM setup
 
@@ -164,7 +173,7 @@ CI repeats these checks on every pull request. Before field use, test on two phy
 
 - Never commit `config/app_config.json`, `google-services.json`, WIF output, `.ppn` files, API keys, keystores, or cloud credentials.
 - Treat an APK as inspectable. Apply provider restrictions and rotate any key that may have been exposed.
-- Keep Auth0 role assignment server-controlled; never trust a role supplied only by the client.
+- Keep account roles server-locked after first registration; never authorize an operation using only a role supplied by the client.
 - Use separate development and production cloud projects and least-privilege deployment identities.
 - Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 

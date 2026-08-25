@@ -6,12 +6,6 @@ Parameters:
     Type: String
   CodeKey:
     Type: String
-  Auth0Issuer:
-    Type: String
-    Default: https://dev-82360je2mhru6r5g.us.auth0.com/
-  Auth0Audience:
-    Type: String
-    Default: https://api.blindway.beyondmarks.ai
   GcpProjectId:
     Type: String
     Default: blind-way-vision-2026
@@ -202,8 +196,7 @@ Resources:
           SARVAM_SECRET_ARN: !Ref SarvamSecret
           SARVAM_TTS_MODEL: bulbul:v3
           SARVAM_TTS_SPEAKER: ritu
-          AUTH0_ISSUER: !Ref Auth0Issuer
-          AUTH0_AUDIENCE: !Ref Auth0Audience
+          GCP_FIREBASE_PROJECT_ID: !Ref FirebaseProjectId
           NODE_OPTIONS: --enable-source-maps
 
   SpeechStreamLogGroup:
@@ -289,12 +282,12 @@ Resources:
     Type: AWS::ApiGatewayV2::Authorizer
     Properties:
       ApiId: !Ref HttpApi
-      Name: Auth0
+      Name: FirebaseAuthentication
       AuthorizerType: JWT
       IdentitySource: ['$request.header.Authorization']
       JwtConfiguration:
-        Audience: [!Ref Auth0Audience]
-        Issuer: !Ref Auth0Issuer
+        Audience: [!Ref FirebaseProjectId]
+        Issuer: !Sub 'https://securetoken.google.com/${FirebaseProjectId}'
 
   ApiIntegration:
     Type: AWS::ApiGatewayV2::Integration

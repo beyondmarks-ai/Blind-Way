@@ -12,4 +12,4 @@ Security fixes target the latest `main` branch until formal releases and a versi
 
 ## Deployment responsibilities
 
-Operators must restrict client API keys, rotate exposed credentials, keep cloud audit logs enabled, review Auth0 role mappings, and test FCM, S3, DynamoDB, and API authorization before any field deployment.
+Operators must restrict Firebase client API keys, rotate exposed credentials, keep cloud audit logs enabled, review server-locked role mappings, and test Firebase Authentication, FCM, S3, DynamoDB, and API authorization before any field deployment.
