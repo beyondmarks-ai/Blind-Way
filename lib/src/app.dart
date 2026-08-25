@@ -206,6 +206,14 @@ class _PhoneOtpDialogState extends ConsumerState<PhoneOtpDialog> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(appControllerProvider.select((state) => state.session), (
+      previous,
+      next,
+    ) {
+      if (previous == null && next != null && mounted) {
+        Navigator.of(context).pop();
+      }
+    });
     final busy = ref.watch(
       appControllerProvider.select((value) => value.isBusy),
     );

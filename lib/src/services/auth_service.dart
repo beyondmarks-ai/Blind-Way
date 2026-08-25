@@ -14,9 +14,12 @@ class AuthService {
   Stream<String?> get tokenChanges =>
       _auth.idTokenChanges().asyncMap((user) => user?.getIdToken());
 
-  Future<UserSession?> restore(UserRole role) async {
+  Stream<bool> get authenticationChanges =>
+      _auth.authStateChanges().map((user) => user != null).distinct();
+
+  Future<UserSession?> restore(UserRole role, {String? phoneNumber}) async {
     final user = _auth.currentUser;
-    return user == null ? null : _session(user, role);
+    return user == null ? null : _session(user, role, phoneNumber: phoneNumber);
   }
 
   Future<void> sendPhoneOtp(String phoneNumber) async {

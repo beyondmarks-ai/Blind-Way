@@ -129,7 +129,10 @@ class AppController extends Notifier<AppState> {
   StreamSubscription<RemoteMessage>? _notificationSubscription;
   StreamSubscription<RemoteMessage>? _foregroundNotificationSubscription;
   StreamSubscription<String?>? _authTokenSubscription;
+  StreamSubscription<bool>? _authStateSubscription;
   bool _visionInFlight = false;
+  bool _automaticLoginInFlight = false;
+  String? _pendingPhoneNumber;
   Uint8List? _latestFrame;
   DateTime? _latestFrameCapturedAt;
   String _pendingTriggerSource = 'button';
@@ -162,6 +165,7 @@ class AppController extends Notifier<AppState> {
       _notificationSubscription?.cancel();
       _foregroundNotificationSubscription?.cancel();
       _authTokenSubscription?.cancel();
+      _authStateSubscription?.cancel();
       unawaited(_voice.stop());
     });
     Future.microtask(_initialize);
@@ -175,6 +179,9 @@ class AppController extends Notifier<AppState> {
     final bluetoothAudio = await _bluetooth.hasBluetoothAudio();
     state = state.copyWith(camera: camera, bluetoothAudio: bluetoothAudio);
     _authTokenSubscription = _auth.tokenChanges.listen(_api.setAccessToken);
+    _authStateSubscription = _auth.authenticationChanges.listen((signedIn) {
+      if (signedIn) unawaited(_completeAutomaticPhoneLogin());
+    });
     FirebaseMessaging.instance.onTokenRefresh.listen(_registerPushToken);
     _notificationSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
       (_) => refreshActiveAlerts(),
@@ -188,10 +195,13 @@ class AppController extends Notifier<AppState> {
 
   Future<bool> requestPhoneOtp(String phoneNumber) async {
     state = state.copyWith(isBusy: true, clearError: true);
+    _pendingPhoneNumber = phoneNumber;
     try {
       await _auth.sendPhoneOtp(phoneNumber);
+      await _completeAutomaticPhoneLogin();
       return true;
     } catch (error) {
+      _pendingPhoneNumber = null;
       state = state.copyWith(error: _message(error));
       return false;
     } finally {
@@ -206,6 +216,7 @@ class AppController extends Notifier<AppState> {
     final role = state.selectedRole;
     if (role == null) return false;
     state = state.copyWith(isBusy: true, clearError: true);
+    _pendingPhoneNumber = null;
     try {
       final session = await _auth.loginWithPhoneOtp(
         role,
@@ -219,6 +230,29 @@ class AppController extends Notifier<AppState> {
       return false;
     } finally {
       state = state.copyWith(isBusy: false);
+    }
+  }
+
+  Future<void> _completeAutomaticPhoneLogin() async {
+    final phoneNumber = _pendingPhoneNumber;
+    final role = state.selectedRole;
+    if (phoneNumber == null ||
+        role == null ||
+        state.session != null ||
+        _automaticLoginInFlight) {
+      return;
+    }
+    _automaticLoginInFlight = true;
+    try {
+      final session = await _auth.restore(role, phoneNumber: phoneNumber);
+      if (session == null) return;
+      _pendingPhoneNumber = null;
+      await _completeLogin(session);
+    } catch (error) {
+      _pendingPhoneNumber = null;
+      state = state.copyWith(error: _message(error));
+    } finally {
+      _automaticLoginInFlight = false;
     }
   }
 
@@ -241,6 +275,7 @@ class AppController extends Notifier<AppState> {
   }
 
   Future<void> logout() async {
+    _pendingPhoneNumber = null;
     await stopAssistance();
     _alertRefreshTimer?.cancel();
     _alertRefreshTimer = null;
