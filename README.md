@@ -180,3 +180,10 @@ CI repeats these checks on every pull request. Before field use, test on two phy
 - Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 Contributions should pass the checks in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+<!-- beyond-marks-credit:start -->
+---
+### Built by Beyond Marks AI Academy
+
+Developed by **Rakesh Kumar** at [Beyond Marks AI Academy](https://beyondmarks.ai).
+<!-- beyond-marks-credit:end -->
