@@ -1,5 +1,5 @@
 import { DefaultAzureCredential, getBearerTokenProvider } from "@azure/identity";
-import { createFcmV1Notification, NotificationHubsClient } from "@azure/notification-hubs";
+import {fcm,pushMessage} from './fcm.js';
 import { WebPubSubServiceClient } from "@azure/web-pubsub";
 import { AzureOpenAI } from "openai";
 
@@ -27,9 +27,11 @@ export async function analyzeScene(image: Uint8Array, language: string) {
   const response = await openai.responses.create({
     model: config.AZURE_OPENAI_DEPLOYMENT,
     store: false,
-    max_output_tokens: 80,
-    reasoning: { effort: "none" },
-    text: { verbosity: "low" },
+    max_output_tokens: 200,
+    text: { format: { type: 'json_schema', name: 'scene_cue', strict: true,
+      schema: { type: 'object', additionalProperties: false,
+        properties: { cue: { type: 'string' }, risk: { type: 'string', enum: ['clear', 'caution', 'danger', 'unknown'] }, confidence: { type: 'number' } },
+        required: ['cue', 'risk', 'confidence'] } } },
     input: [{
       role: "user",
       content: [
@@ -47,53 +49,15 @@ export async function analyzeScene(image: Uint8Array, language: string) {
   return { cue: cue || "Vision unavailable", risk, confidence };
 }
 
-export async function synthesizeSpeech(text: string, language: string) {
-  if (!config.SARVAM_API_KEY) throw new Error("Sarvam speech is not configured.");
-  const languageCode = language === "Hindi" ? "hi-IN" : language === "Tamil" ? "ta-IN" : "en-IN";
-  const response = await fetch("https://api.sarvam.ai/text-to-speech/stream", {
-    method: "POST",
-    headers: {
-      "api-subscription-key": config.SARVAM_API_KEY,
-      "content-type": "application/json",
-      accept: "audio/mpeg",
-    },
-    body: JSON.stringify({
-      text,
-      language_code: languageCode,
-      speaker: config.SARVAM_TTS_SPEAKER,
-      model: config.SARVAM_TTS_MODEL,
-      output_audio_codec: "mp3",
-      output_audio_bitrate: "64k",
-      speech_sample_rate: 24000,
-      pace: 1.12,
-      temperature: 0.65,
-    }),
-  });
-  if (!response.ok || !response.body) {
-    throw new Error(`Sarvam speech failed with status ${response.status}.`);
-  }
-  return response;
-}
+export { sarvamSpeech as synthesizeSpeech } from './voice.js';
 
 export async function sendEmergencyPush(devices: Device[], alert: Alert, blindProfile?: Profile) {
-  if (!config.NOTIFICATION_HUB_CONNECTION_STRING || !config.NOTIFICATION_HUB_NAME || !devices.length) return;
-  const client = new NotificationHubsClient(config.NOTIFICATION_HUB_CONNECTION_STRING, config.NOTIFICATION_HUB_NAME);
-  const notification = createFcmV1Notification({
-    body: {
-      notification: {
-        title: "Emergency assistance requested",
-        body: `${blindProfile?.displayName ?? "A trusted Blind Way user"} needs your help.`,
-      },
-      data: { alertId: alert.id, type: "emergency" },
-      android: {
-        priority: "high",
-        notification: { channel_id: "emergency_alerts", sound: "default" },
-      },
-    },
-  });
-  await Promise.allSettled(
-    devices.map((device) => client.sendNotification(notification, { deviceHandle: device.pushToken })),
-  );
+  if(!devices.length)return;
+  const results=await Promise.allSettled([...new Set(devices.map(d=>d.pushToken))].map(token=>fcm.send(pushMessage(
+    token,'Emergency assistance requested',`${blindProfile?.displayName??'A trusted Blind Way user'} needs your help. Open Blind Way for their location.`,
+    {alertId:alert.id,type:'emergency'}))));
+  const failed=results.filter(r=>r.status==='rejected' && (r.reason as {fcmCode?:string}).fcmCode!=='UNREGISTERED');
+  if(failed.length)throw Error(`Guardian push failed for ${failed.length} device(s).`);
 }
 
 function realtimeClient() {

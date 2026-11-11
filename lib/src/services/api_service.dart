@@ -6,8 +6,26 @@ import 'package:dio/dio.dart';
 import '../config/app_config.dart';
 import '../models/models.dart';
 
+Uri navigationMediaUri(String liveUrl, String path) {
+  final base = Uri.parse(liveUrl);
+  return Uri(
+    scheme: 'https',
+    host: base.host,
+    port: base.hasPort ? base.port : null,
+    path: path,
+  );
+}
+
 class ApiService {
-  ApiService()
+  Future<Map<String, dynamic>> navigation(
+    String action,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _dio.post('/v1/navigation/$action', data: data);
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  ApiService({Future<String?> Function()? accessTokenProvider})
     : _dio = Dio(
         BaseOptions(
           baseUrl: AppConfig.apiBaseUrl,
@@ -16,12 +34,86 @@ class ApiService {
           sendTimeout: const Duration(seconds: 25),
           headers: {'Accept': 'application/json'},
         ),
+      ) {
+    if (accessTokenProvider != null) {
+      _dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) async {
+            try {
+              final token = await accessTokenProvider();
+              setAccessToken(token);
+              options.headers.remove('Authorization');
+              if (token != null) {
+                options.headers['Authorization'] = 'Bearer $token';
+              }
+              handler.next(options);
+            } catch (_) {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  error:
+                      'Could not refresh your session. Check your connection or sign in again.',
+                ),
+              );
+            }
+          },
+        ),
       );
+    }
+  }
 
   final Dio _dio;
+  Uri _liveEndpoint(String path) =>
+      navigationMediaUri(AppConfig.geminiLiveUrl, path);
+
+  Future<Uint8List> navigationSpeech(String text, String language) async {
+    final response = await _dio.post<List<int>>(
+      _liveEndpoint('/speech').toString(),
+      data: {'text': text, 'language': language},
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(response.data!);
+  }
+
+  Future<List<String>> translateNavigation(
+    List<String> texts,
+    String language,
+  ) async {
+    final response = await _dio.post(
+      _liveEndpoint('/navigation/translate').toString(),
+      data: {'texts': texts, 'language': language},
+    );
+    return List<String>.from(response.data['texts']);
+  }
+
   String? _token;
 
   void setAccessToken(String? token) => _token = token;
+  Future<void> testNotification() async {
+    await _dio.post<void>('/v1/notifications/test', options: _options);
+  }
+
+  Future<Map<String, dynamic>> askQuestion(
+    Uint8List wav,
+    Uint8List? image, {
+    String language = 'auto',
+    String navigationPrompt = 'none',
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/v1/assistant/ask',
+      data: {
+        'audioBase64': base64Encode(wav),
+        if (navigationPrompt != 'none') 'navigationPrompt': navigationPrompt,
+        'language': language,
+        if (image != null) 'imageBase64': base64Encode(image),
+      },
+      options: Options(
+        headers: _options.headers,
+        receiveTimeout: const Duration(seconds: 40),
+      ),
+    );
+    return response.data ?? const {};
+  }
 
   Uri speechUri(String text, String language) {
     final base = AppConfig.speechStreamUrl.isNotEmpty
@@ -77,6 +169,15 @@ class ApiService {
       'role': role.name,
       'displayName': displayName,
     },
+    options: _options,
+  );
+
+  Future<void> registerProfile({
+    required UserRole role,
+    required String displayName,
+  }) => _dio.post<void>(
+    '/v1/profile',
+    data: {'role': role.name, 'displayName': displayName},
     options: _options,
   );
 

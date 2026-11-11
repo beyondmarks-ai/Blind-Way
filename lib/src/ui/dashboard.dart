@@ -9,7 +9,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_config.dart';
 import '../models/models.dart';
 import '../services/voice_emergency_service.dart';
+import '../services/notification_service.dart';
+import '../config/languages.dart';
 import '../state/app_controller.dart';
+import 'camera_preview.dart';
+import 'navigation_screen.dart';
 
 class Dashboard extends ConsumerStatefulWidget {
   const Dashboard({super.key});
@@ -40,6 +44,14 @@ class _DashboardState extends ConsumerState<Dashboard> {
       ),
       body: Column(
         children: [
+          if (!NotificationService.instance.pushAvailable ||
+              !AppConfig.guardianPushConfigured)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'Background emergency notifications are not configured. Trusted contacts must keep this app open to see alerts.',
+              ),
+            ),
           if (state.error != null)
             MaterialBanner(
               content: Text(state.error!),
@@ -93,6 +105,17 @@ class BlindHome extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const WalkingNavigationScreen(),
+            ),
+          ),
+          icon: const Icon(Icons.directions_walk),
+          label: const Text('Google Maps walking directions'),
+        ),
+        if (state.navigation.active || state.navigation.busy)
+          Semantics(liveRegion: true, child: Text(state.navigation.message)),
         _StatusCard(
           icon: state.camera == null ? Icons.videocam_off : Icons.videocam,
           title: state.camera == null
@@ -108,6 +131,123 @@ class BlindHome extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (state.camera != null) ...[
+          if (AppConfig.geminiLiveUrl.isNotEmpty) ...[
+            FilledButton.icon(
+              onPressed:
+                  state.liveConnecting ||
+                      state.isReadingText ||
+                      state.sosCountdown != null ||
+                      state.activeAlert != null
+                  ? null
+                  : () => controller.setGeminiLive(!state.geminiLive),
+              icon: Icon(
+                state.geminiLive ? Icons.stop_circle : Icons.video_call,
+              ),
+              label: Text(
+                state.liveConnecting
+                    ? 'Connecting Gemini Live…'
+                    : state.geminiLive
+                    ? 'Stop Gemini Live'
+                    : 'Start Gemini Live',
+              ),
+            ),
+            const Text(
+              'Live trial: camera frames go to Google about once a second. Say Hey Jarvis, pause, then ask in your language. Question audio streams after activation. Use Stop question to interrupt a reply.',
+            ),
+          ],
+          if (state.geminiLive) ...[
+            SwitchListTile(
+              title: const Text('Automatic surroundings'),
+              subtitle: const Text(
+                'Describe visible changes without asking. Waits for each reply to finish. Stop question also pauses automatic updates.',
+              ),
+              value: state.autoNarration,
+              onChanged: controller.setAutoNarration,
+            ),
+            if (state.memoryStatus.isNotEmpty) Text(state.memoryStatus),
+          ],
+          if (!state.geminiLive && !state.liveConnecting)
+            SwitchListTile(
+              title: const Text('Hands-free questions'),
+              subtitle: const Text(
+                'Say Hey Jarvis, then ask in your language. In this mode, say Hey Jarvis then Help for SOS, or use the emergency button.',
+              ),
+              value: state.handsFreeQuestions,
+              onChanged:
+                  state.isAsking ||
+                      state.liveConnecting ||
+                      state.isReadingText ||
+                      state.sosCountdown != null ||
+                      state.activeAlert != null
+                  ? null
+                  : controller.setHandsFreeQuestions,
+            ),
+          FilledButton.icon(
+            onPressed:
+                state.isAsking ||
+                    state.liveConnecting ||
+                    state.isReadingText ||
+                    state.sosCountdown != null ||
+                    state.activeAlert != null
+                ? null
+                : controller.askQuestion,
+            icon: const Icon(Icons.mic),
+            label: const Text('Ask a question'),
+          ),
+          if (state.isAsking)
+            TextButton(
+              onPressed: controller.cancelQuestion,
+              child: const Text('Stop question'),
+            ),
+          if (state.questionStatus.isNotEmpty)
+            Semantics(liveRegion: true, child: Text(state.questionStatus)),
+          if (state.lastQuestion.isNotEmpty) Text('You: ${state.lastQuestion}'),
+          if (state.lastAnswer.isNotEmpty) SelectableText(state.lastAnswer),
+          OutlinedButton.icon(
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => const CameraPreviewDialog(),
+            ),
+            icon: const Icon(Icons.camera_alt),
+            label: const Text('Camera preview'),
+          ),
+          FilledButton.icon(
+            onPressed:
+                state.isBusy ||
+                    state.geminiLive ||
+                    state.liveConnecting ||
+                    state.isAsking ||
+                    state.isReadingText ||
+                    !state.camera!.supportsReading ||
+                    state.sosCountdown != null ||
+                    state.activeAlert != null
+                ? null
+                : controller.readCameraText,
+            icon: const Icon(Icons.document_scanner),
+            label: Text(state.isReadingText ? 'Reading text…' : 'Read text'),
+          ),
+          Text(
+            state.camera!.supportsReading
+                ? 'Navigation: 320 × 240. Read text: 1600 × 1200. Reading pauses scene guidance. English OCR stays on your phone.'
+                : 'This camera supports navigation snapshots. Install the two-mode firmware and reconnect to enable Read text.',
+          ),
+          if (state.readingStatus.isNotEmpty)
+            Semantics(liveRegion: true, child: Text(state.readingStatus)),
+          if (state.recognizedText.isNotEmpty) ...[
+            SelectableText(state.recognizedText),
+            TextButton(
+              onPressed: state.isReadingText ? null : controller.repeatReadText,
+              child: const Text('Read text again'),
+            ),
+          ],
+          if (state.isReadingText || state.recognizedText.isNotEmpty)
+            TextButton(
+              onPressed: controller.stopReadingSpeech,
+              child: const Text('Stop reading'),
+            ),
+          const SizedBox(height: 12),
+        ],
         _StatusCard(
           icon: state.bluetoothAudio ? Icons.headphones : Icons.headset_off,
           title: state.bluetoothAudio
@@ -123,15 +263,21 @@ class BlindHome extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
         _StatusCard(
-          icon: state.voiceEmergencyListening ? Icons.mic : Icons.mic_off,
-          title: state.voiceEmergencyListening
+          icon: state.handsFreeQuestions || state.voiceEmergencyListening
+              ? Icons.mic
+              : Icons.mic_off,
+          title: state.handsFreeQuestions
+              ? 'Hey Jarvis listening'
+              : state.voiceEmergencyListening
               ? state.voiceEmergencyMode == VoiceEmergencyMode.offlineWakeWord
                     ? 'Offline wake word ready'
                     : 'Voice emergency ready'
               : state.voiceEmergencyAvailable
               ? 'Voice emergency starts with assistance'
               : 'Voice emergency unavailable',
-          subtitle: state.voiceEmergencyListening
+          subtitle: state.handsFreeQuestions
+              ? 'Say “Hey Jarvis”, pause, then ask a question or say “Help” for SOS. Questions need internet.'
+              : state.voiceEmergencyListening
               ? state.voiceEmergencyMode == VoiceEmergencyMode.offlineWakeWord
                     ? 'Say “${AppConfig.wakeWordPhrase}” using the phone or earbud microphone. Detection stays on-device.'
                     : 'Say “Help”, “Emergency”, or “SOS” using the phone or earbud microphone.'
@@ -145,7 +291,11 @@ class BlindHome extends ConsumerWidget {
                 : const Color(0xff00677e),
             minimumSize: const Size.fromHeight(72),
           ),
-          onPressed: state.isBusy
+          onPressed:
+              state.geminiLive ||
+                  state.liveConnecting ||
+                  state.isBusy ||
+                  (state.isReadingText && !state.isAssisting)
               ? null
               : state.isAssisting
               ? controller.stopAssistance
@@ -256,6 +406,14 @@ class _CameraDialogState extends ConsumerState<CameraDialog> {
   final _token = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    final camera = ref.read(appControllerProvider).camera;
+    _url.text = camera?.baseUrl ?? AppConfig.cameraAddress;
+    _token.text = camera?.token ?? '';
+  }
+
+  @override
   void dispose() {
     _url.dispose();
     _token.dispose();
@@ -269,14 +427,21 @@ class _CameraDialogState extends ConsumerState<CameraDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Keep the phone and ESP32-CAM on the same Wi-Fi.'),
+          const Text(
+            'Use the phone hosting the camera hotspot, or join the same Wi-Fi. The current GC2145 firmware uses its IP address; it does not support BLE setup or automatic discovery.',
+          ),
+          if (ref.watch(appControllerProvider).error case final error?)
+            Text(
+              error,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           const SizedBox(height: 14),
           TextField(
             controller: _url,
             keyboardType: TextInputType.url,
             decoration: const InputDecoration(
               labelText: 'Camera address',
-              hintText: '192.168.1.50',
+              hintText: '10.67.29.164',
               border: OutlineInputBorder(),
             ),
           ),
@@ -286,6 +451,7 @@ class _CameraDialogState extends ConsumerState<CameraDialog> {
             obscureText: true,
             decoration: const InputDecoration(
               labelText: 'Camera token (optional)',
+              helperText: 'Leave blank for the current GC2145 firmware.',
               border: OutlineInputBorder(),
             ),
           ),
@@ -314,15 +480,16 @@ class _CameraDialogState extends ConsumerState<CameraDialog> {
         child: const Text('Cancel'),
       ),
       FilledButton(
-        onPressed: () async {
-          await ref
-              .read(appControllerProvider.notifier)
-              .connectCamera(_url.text, token: _token.text);
-          if (context.mounted &&
-              ref.read(appControllerProvider).camera != null) {
-            Navigator.pop(context);
-          }
-        },
+        onPressed: ref.watch(appControllerProvider).isBusy
+            ? null
+            : () async {
+                final connected = await ref
+                    .read(appControllerProvider.notifier)
+                    .connectCamera(_url.text, token: _token.text);
+                if (context.mounted && connected) {
+                  Navigator.pop(context);
+                }
+              },
         child: const Text('Connect'),
       ),
     ],
@@ -773,20 +940,43 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 24),
         DropdownButtonFormField<String>(
-          initialValue: state.language,
+          key: ValueKey(state.language),
+          initialValue: AppLanguages.normalize(state.language),
+          isExpanded: true,
           decoration: const InputDecoration(
-            labelText: 'Spoken guidance language',
+            labelText: 'Voice response language',
             border: OutlineInputBorder(),
           ),
-          items: const ['English', 'Hindi', 'Tamil']
+          items: AppLanguages.labels.entries
               .map(
-                (language) =>
-                    DropdownMenuItem(value: language, child: Text(language)),
+                (language) => DropdownMenuItem(
+                  value: language.key,
+                  child: Text(language.value, overflow: TextOverflow.ellipsis),
+                ),
               )
               .toList(),
-          onChanged: (value) {
-            if (value != null) controller.setLanguage(value);
-          },
+          onChanged:
+              (state.isAsking && !state.geminiLive) ||
+                  state.liveConnecting ||
+                  state.isReadingText ||
+                  state.sosCountdown != null ||
+                  state.activeAlert != null
+              ? null
+              : (value) {
+                  if (value != null) controller.setLanguage(value);
+                },
+        ),
+        const Text(
+          'Gemini Live switches to your selected language and resumes automatically. Automatic follows your spoken question. Your choice is saved.',
+        ),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: state.isBusy ? null : controller.testNotification,
+          icon: const Icon(Icons.notifications_active),
+          label: const Text('Test notification for my account'),
+        ),
+        const Text(
+          'Guardians must allow notifications, sign in, and link with the assistance user in Trusted people.',
         ),
         const SizedBox(height: 16),
         OutlinedButton.icon(
@@ -799,7 +989,7 @@ class SettingsScreen extends ConsumerWidget {
           child: Padding(
             padding: EdgeInsets.all(18),
             child: Text(
-              'Privacy: normal camera images are analyzed transiently. Only the latest frame is stored during an emergency, shared with linked guardians, and deleted when the alert closes or after 30 days. Location is shared only during an active alert.',
+              'Privacy: normal camera images are analyzed transiently. Only the latest frame is stored during an emergency and shared with linked guardians. Walking navigation sends your current location and destination to Google Maps. Guardians receive location only during an active emergency alert.',
             ),
           ),
         ),

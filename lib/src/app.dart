@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -55,13 +57,44 @@ class BlindWayApp extends ConsumerWidget {
   }
 }
 
-class SignInScreen extends ConsumerWidget {
+class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
+  @override
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
+}
+
+class _SignInScreenState extends ConsumerState<SignInScreen> {
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  final _code = TextEditingController();
+  Timer? _timer;
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void dispose() {
+    _timer?.cancel();
+    _name.dispose();
+    _phone.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(appControllerProvider);
     final controller = ref.read(appControllerProvider.notifier);
+    final locked = state.isBusy || state.otpSent || state.loginPending;
+    final remaining =
+        ((state.resendAvailableAt - DateTime.now().millisecondsSinceEpoch) /
+                1000)
+            .ceil()
+            .clamp(0, 120);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -102,7 +135,9 @@ class SignInScreen extends ConsumerWidget {
                     title: 'I need vision assistance',
                     subtitle:
                         'Connect a camera, hear guidance, and send emergency alerts.',
-                    onTap: () => controller.selectRole(UserRole.blindUser),
+                    onTap: locked
+                        ? null
+                        : () => controller.selectRole(UserRole.blindUser),
                   ),
                   const SizedBox(height: 12),
                   _RoleCard(
@@ -110,24 +145,121 @@ class SignInScreen extends ConsumerWidget {
                     icon: Icons.health_and_safety,
                     title: 'I am a trusted contact',
                     subtitle: 'Receive alerts and see live emergency location.',
-                    onTap: () =>
-                        controller.selectRole(UserRole.emergencyContact),
+                    onTap: locked
+                        ? null
+                        : () =>
+                              controller.selectRole(UserRole.emergencyContact),
                   ),
                   const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: state.selectedRole == null || state.isBusy
-                        ? null
-                        : () => showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const PhoneOtpDialog(),
-                          ),
-                    icon: const Icon(Icons.sms_outlined),
-                    label: const Text('Continue with phone OTP'),
+                  TextField(
+                    controller: _name,
+                    readOnly: locked,
+                    decoration: const InputDecoration(
+                      labelText: 'Your name',
+                      border: OutlineInputBorder(),
+                    ),
+                    autofillHints: const [AutofillHints.name],
+                    textCapitalization: TextCapitalization.words,
+                    maxLength: 80,
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _phone,
+                    readOnly: locked,
+                    keyboardType: TextInputType.phone,
+                    autofillHints: const [
+                      AutofillHints.telephoneNumberNational,
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'Mobile number (India)',
+                      hintText: '10-digit number',
+                      prefixText: '+91 ',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (state.loginPending) ...[
+                    FilledButton.icon(
+                      onPressed: state.isBusy ? null : controller.retryLogin,
+                      icon: const Icon(Icons.refresh),
+                      label: Text(
+                        state.isBusy ? 'Opening account...' : 'Retry sign-in',
+                      ),
+                    ),
+                  ] else if (state.otpSent) ...[
+                    TextField(
+                      controller: _code,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      readOnly: state.isBusy,
+                      autofillHints: const [AutofillHints.oneTimeCode],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: const InputDecoration(
+                        labelText: '6-digit SMS code',
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) {
+                        if (!state.isBusy) controller.verifyOtp(_code.text);
+                      },
+                    ),
+                    FilledButton(
+                      onPressed: state.isBusy
+                          ? null
+                          : () => controller.verifyOtp(_code.text),
+                      child: Text(
+                        state.isBusy ? 'Verifying…' : 'Verify and sign in',
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: state.isBusy || remaining > 0
+                          ? null
+                          : () {
+                              _code.clear();
+                              controller.sendOtp(
+                                phoneNumber: _phone.text,
+                                displayName: _name.text,
+                                resend: true,
+                              );
+                            },
+                      child: Text(
+                        remaining > 0
+                            ? 'Resend code in $remaining seconds'
+                            : 'Resend code',
+                      ),
+                    ),
+                  ] else
+                    FilledButton.icon(
+                      onPressed:
+                          state.selectedRole == null ||
+                              state.isBusy ||
+                              remaining > 0
+                          ? null
+                          : () => controller.sendOtp(
+                              phoneNumber: _phone.text,
+                              displayName: _name.text,
+                            ),
+                      icon: const Icon(Icons.sms_outlined),
+                      label: Text(
+                        state.isBusy
+                            ? 'Sending code…'
+                            : remaining > 0
+                            ? 'Try again in $remaining seconds'
+                            : 'Send OTP',
+                      ),
+                    ),
+                  if (state.otpSent || state.isBusy || state.loginPending)
+                    TextButton(
+                      onPressed: () {
+                        _code.clear();
+                        controller.resetPhoneSignIn();
+                      },
+                      child: const Text('Change number or cancel'),
+                    ),
+                  if (state.otpMessage.isNotEmpty)
+                    Semantics(liveRegion: true, child: Text(state.otpMessage)),
                   const SizedBox(height: 10),
                   const Text(
-                    'Firebase sends a verification code directly to your phone. No browser sign-in is required.',
+                    'No password needed. By sending a code, you agree that Google uses your phone number for verification and abuse prevention. SMS charges may apply.',
                     textAlign: TextAlign.center,
                   ),
                   if (state.error != null) ...[
@@ -140,160 +272,6 @@ class SignInScreen extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class PhoneOtpDialog extends ConsumerStatefulWidget {
-  const PhoneOtpDialog({super.key});
-
-  @override
-  ConsumerState<PhoneOtpDialog> createState() => _PhoneOtpDialogState();
-}
-
-class _PhoneOtpDialogState extends ConsumerState<PhoneOtpDialog> {
-  final _phoneController = TextEditingController(text: '+91');
-  final _codeController = TextEditingController();
-  bool _codeSent = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _phoneController.dispose();
-    _codeController.dispose();
-    super.dispose();
-  }
-
-  String get _phone => _phoneController.text.replaceAll(RegExp(r'[\s()-]'), '');
-
-  Future<void> _sendCode() async {
-    if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(_phone)) {
-      setState(
-        () => _error =
-            'Enter a phone number with country code, such as +919876543210.',
-      );
-      return;
-    }
-    setState(() => _error = null);
-    final sent = await ref
-        .read(appControllerProvider.notifier)
-        .requestPhoneOtp(_phone);
-    if (!mounted) return;
-    if (sent) {
-      setState(() => _codeSent = true);
-    } else {
-      setState(() => _error = ref.read(appControllerProvider).error);
-    }
-  }
-
-  Future<void> _verifyCode() async {
-    final code = _codeController.text.trim();
-    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      setState(() => _error = 'Enter the six-digit code from the SMS.');
-      return;
-    }
-    setState(() => _error = null);
-    final verified = await ref
-        .read(appControllerProvider.notifier)
-        .verifyPhoneOtp(_phone, code);
-    if (!mounted) return;
-    if (verified) {
-      Navigator.of(context).pop();
-    } else {
-      setState(() => _error = ref.read(appControllerProvider).error);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    ref.listen(appControllerProvider.select((state) => state.session), (
-      previous,
-      next,
-    ) {
-      if (previous == null && next != null && mounted) {
-        Navigator.of(context).pop();
-      }
-    });
-    final busy = ref.watch(
-      appControllerProvider.select((value) => value.isBusy),
-    );
-    return AlertDialog(
-      title: Text(_codeSent ? 'Enter verification code' : 'Phone sign in'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              _codeSent
-                  ? 'We sent a six-digit code to $_phone.'
-                  : 'Enter your mobile number including the country code.',
-            ),
-            const SizedBox(height: 16),
-            if (!_codeSent)
-              TextField(
-                controller: _phoneController,
-                autofocus: true,
-                keyboardType: TextInputType.phone,
-                autofillHints: const [AutofillHints.telephoneNumber],
-                decoration: const InputDecoration(
-                  labelText: 'Phone number',
-                  hintText: '+919876543210',
-                  border: OutlineInputBorder(),
-                ),
-                textInputAction: TextInputAction.done,
-                onSubmitted: busy ? null : (_) => _sendCode(),
-              )
-            else
-              TextField(
-                controller: _codeController,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                maxLength: 6,
-                decoration: const InputDecoration(
-                  labelText: 'Six-digit code',
-                  border: OutlineInputBorder(),
-                ),
-                textInputAction: TextInputAction.done,
-                onSubmitted: busy ? null : (_) => _verifyCode(),
-              ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        if (_codeSent)
-          TextButton(
-            onPressed: busy
-                ? null
-                : () => setState(() {
-                    _codeSent = false;
-                    _codeController.clear();
-                    _error = null;
-                  }),
-            child: const Text('Change number'),
-          ),
-        TextButton(
-          onPressed: busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: busy ? null : (_codeSent ? _verifyCode : _sendCode),
-          child: busy
-              ? const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(_codeSent ? 'Verify' : 'Send code'),
-        ),
-      ],
     );
   }
 }
@@ -311,11 +289,12 @@ class _RoleCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) => Semantics(
     selected: selected,
+    enabled: onTap != null,
     button: true,
     child: Card(
       color: selected ? Theme.of(context).colorScheme.primaryContainer : null,

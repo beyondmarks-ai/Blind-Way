@@ -42,7 +42,10 @@ export class MemoryRepository implements Repository {
     return profile;
   }
   async profile(id: string) { return this.profiles.get(id); }
-  async saveDevice(device: Device) { this.deviceItems.set(device.id, device); }
+  async saveDevice(device: Device) {
+    for(const [id,old] of this.deviceItems)if(old.pushToken===device.pushToken&&id!==device.id)this.deviceItems.delete(id);
+    this.deviceItems.set(device.id, device);
+  }
   async devices(ownerIds: string[]) { return [...this.deviceItems.values()].filter((d) => ownerIds.includes(d.ownerId)); }
   async saveInvite(invite: Invite) { this.invites.set(invite.id, invite); }
   async inviteByHash(hash: string) { return [...this.invites.values()].find((i) => i.codeHash === hash); }
@@ -71,13 +74,9 @@ class CosmosRepository implements Repository {
   private async container(): Promise<Container> {
     this.containerPromise ??= (async () => {
       const client = new CosmosClient({ endpoint: config.COSMOS_ENDPOINT!, aadCredentials: new DefaultAzureCredential() });
-      const { database } = await client.databases.createIfNotExists({ id: config.COSMOS_DATABASE });
-      const { container } = await database.containers.createIfNotExists({
-        id: "items",
-        partitionKey: { paths: ["/partitionKey"] },
-        defaultTtl: -1,
-      });
-      return container;
+      // Infrastructure provisions these resources. The managed identity has
+      // data permissions, not permission to create database metadata.
+      return client.database(config.COSMOS_DATABASE).container('items');
     })();
     return this.containerPromise;
   }
@@ -92,11 +91,22 @@ class CosmosRepository implements Repository {
     if (existing) return existing;
     const now = new Date().toISOString();
     const profile: Profile = { id, type: "profile", role, displayName, phoneVerified: false, createdAt: now, updatedAt: now };
-    await this.upsert({ ...profile, partitionKey: id });
+    try {
+      await (await this.container()).items.create({ ...profile, partitionKey: id });
+    } catch (error) {
+      if ((error as { code?: number }).code !== 409) throw error;
+      const concurrent = await this.profile(id);
+      if (!concurrent) throw error;
+      return concurrent;
+    }
     return profile;
   }
   async profile(id: string) { return (await this.query<Profile>("SELECT * FROM c WHERE c.type='profile' AND c.id=@id", [{ name: "@id", value: id }]))[0]; }
-  async saveDevice(device: Device) { await this.upsert({ ...device, partitionKey: device.ownerId }); }
+  async saveDevice(device: Device) {
+    const previous=await this.query<Device>("SELECT * FROM c WHERE c.type='device' AND c.pushToken=@token",[{name:'@token',value:device.pushToken}]);
+    for(const old of previous)if(old.id!==device.id)await (await this.container()).item(old.id,old.ownerId).delete();
+    await this.upsert({ ...device, partitionKey: device.ownerId });
+  }
   async devices(ids: string[]) { return ids.length ? this.query<Device>("SELECT * FROM c WHERE c.type='device' AND ARRAY_CONTAINS(@ids,c.ownerId)", [{ name: "@ids", value: ids }]) : []; }
   async saveInvite(invite: Invite) { await this.upsert({ ...invite, partitionKey: invite.blindUserId }); }
   async inviteByHash(hash: string) { return (await this.query<Invite>("SELECT * FROM c WHERE c.type='invite' AND c.codeHash=@hash", [{ name: "@hash", value: hash }]))[0]; }

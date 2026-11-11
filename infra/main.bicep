@@ -11,16 +11,28 @@ param location string = resourceGroup().location
 param notificationLocation string = 'centralindia'
 
 @description('Resource group containing the existing Azure OpenAI account.')
-param azureOpenAiResourceGroup string = 'Beyond_Marks'
+param azureOpenAiResourceGroup string
 
 @description('Existing Azure OpenAI account name.')
-param azureOpenAiAccountName string = 'Rakesh'
+param azureOpenAiAccountName string
 
 @description('Existing vision deployment name.')
-param azureOpenAiDeployment string = 'gpt-5.1'
+param azureOpenAiDeployment string
 
-@description('Firebase project whose ID tokens are accepted by the API.')
-param firebaseProjectId string = 'blind-way-beyondmarks-2026'
+@description('Google project used for Firebase phone authentication.')
+param firebaseProjectId string
+
+@description('GCP workload identity provider resource used by the Azure function for FCM.')
+param fcmWifProvider string = ''
+
+@description('GCP service account email with Firebase Cloud Messaging send permission.')
+param fcmServiceAccount string = ''
+
+@description('Enable only after FCM credentials are available for Android push.')
+param enablePush bool = false
+
+@description('Optional Web PubSub service; the mobile client currently polls alerts.')
+param enableRealtime bool = false
 
 var suffix = take(uniqueString(subscription().id, resourceGroup().id, deploymentStamp), 8)
 var compactPrefix = replace(prefix, '-', '')
@@ -50,6 +62,38 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
   }
+}
+
+resource blobs 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource snapshots 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobs
+  name: 'emergency-snapshots'
+  properties: { publicAccess: 'None' }
+}
+
+resource snapshotRetention 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  parent: storage
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [{ name: 'expire-emergency-snapshots', enabled: true, type: 'Lifecycle', definition: {
+        filters: { blobTypes: ['blockBlob'], prefixMatch: ['emergency-snapshots/'] }
+        actions: { baseBlob: { delete: { daysAfterModificationGreaterThan: 1 } } }
+      } }]
+    }
+  }
+}
+
+resource speech 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+  name: '${prefix}-speech-${suffix}'
+  location: location
+  kind: 'SpeechServices'
+  sku: { name: 'S0' }
+  properties: { publicNetworkAccess: 'Enabled' }
 }
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
@@ -95,6 +139,18 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15
   properties: { resource: { id: 'blindway' } }
 }
 
+resource conversationMemory 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'conversation-memory'
+  properties: {
+    resource: {
+      id: 'conversation-memory'
+      partitionKey: { paths: ['/partitionKey'], kind: 'Hash' }
+      defaultTtl: 604800
+    }
+  }
+}
+
 resource items 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   parent: database
   name: 'items'
@@ -112,7 +168,7 @@ resource items 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@20
   }
 }
 
-resource pubsub 'Microsoft.SignalRService/webPubSub@2024-03-01' = {
+resource pubsub 'Microsoft.SignalRService/webPubSub@2024-03-01' = if (enableRealtime) {
   name: pubsubName
   location: location
   sku: { name: 'Free_F1', tier: 'Free', capacity: 1 }
@@ -123,14 +179,14 @@ resource pubsub 'Microsoft.SignalRService/webPubSub@2024-03-01' = {
   }
 }
 
-resource notificationNamespace 'Microsoft.NotificationHubs/namespaces@2023-09-01' = {
+resource notificationNamespace 'Microsoft.NotificationHubs/namespaces@2023-09-01' = if (enablePush) {
   name: notificationNamespaceName
   location: notificationLocation
-  sku: { name: 'Standard', tier: 'Standard' }
+  sku: { name: 'Free', tier: 'Free' }
   properties: { namespaceType: 'NotificationHub' }
 }
 
-resource notificationHub 'Microsoft.NotificationHubs/namespaces/notificationHubs@2023-09-01' = {
+resource notificationHub 'Microsoft.NotificationHubs/namespaces/notificationHubs@2023-09-01' = if (enablePush) {
   parent: notificationNamespace
   name: notificationHubName
   location: notificationLocation
@@ -152,7 +208,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+resource functionApp 'Microsoft.Web/sites@2024-11-01' = {
   name: functionName
   location: location
   kind: 'functionapp'
@@ -160,6 +216,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
+    ipMode: 'IPv4AndIPv6'
     publicNetworkAccess: 'Enabled'
     siteConfig: {
       ftpsState: 'Disabled'
@@ -179,16 +236,18 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'WEBSITE_CONTENTSHARE', value: take('${compactPrefix}${suffix}wincontent', 63) }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
         { name: 'FIREBASE_PROJECT_ID', value: firebaseProjectId }
+        { name: 'FCM_WIF_PROVIDER', value: fcmWifProvider }
+        { name: 'FCM_SERVICE_ACCOUNT', value: fcmServiceAccount }
         { name: 'ALLOW_DEBUG_AUTH', value: 'false' }
         { name: 'AZURE_OPENAI_ENDPOINT', value: existingOpenAi.properties.endpoint }
         { name: 'AZURE_OPENAI_DEPLOYMENT', value: azureOpenAiDeployment }
-        { name: 'SARVAM_TTS_MODEL', value: 'bulbul:v3' }
-        { name: 'SARVAM_TTS_SPEAKER', value: 'ritu' }
+        { name: 'AZURE_SPEECH_KEY', value: speech.listKeys().key1 }
+        { name: 'AZURE_SPEECH_REGION', value: location }
         { name: 'COSMOS_ENDPOINT', value: cosmos.properties.documentEndpoint }
         { name: 'COSMOS_DATABASE', value: 'blindway' }
-        { name: 'WEB_PUBSUB_CONNECTION_STRING', value: pubsub.listKeys().primaryConnectionString }
+        { name: 'WEB_PUBSUB_CONNECTION_STRING', value: enableRealtime ? pubsub.listKeys().primaryConnectionString : '' }
         { name: 'WEB_PUBSUB_HUB', value: 'alerts' }
-        { name: 'NOTIFICATION_HUB_NAME', value: notificationHub.name }
+        { name: 'NOTIFICATION_HUB_NAME', value: enablePush ? notificationHub.name : '' }
       ]
     }
   }
@@ -211,6 +270,6 @@ output azureOpenAiResourceId string = existingOpenAi.id
 output apiBaseUrl string = 'https://${functionApp.properties.defaultHostName}/api'
 output cosmosAccountName string = cosmos.name
 output keyVaultName string = keyVault.name
-output notificationNamespaceName string = notificationNamespace.name
-output notificationHubName string = notificationHub.name
-output webPubSubName string = pubsub.name
+output notificationNamespaceName string = enablePush ? notificationNamespace.name : ''
+output notificationHubName string = enablePush ? notificationHub.name : ''
+output webPubSubName string = enableRealtime ? pubsub.name : ''

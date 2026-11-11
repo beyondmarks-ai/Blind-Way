@@ -1,11 +1,7 @@
 import 'dart:async';
 
-import 'package:porcupine_flutter/porcupine.dart';
-import 'package:porcupine_flutter/porcupine_manager.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
-
-import '../config/app_config.dart';
 
 enum VoiceEmergencyMode { offlineWakeWord, speechRecognition, unavailable }
 
@@ -17,7 +13,6 @@ class VoiceEmergencyStartResult {
 
 class VoiceEmergencyService {
   final SpeechToText _speech = SpeechToText();
-  PorcupineManager? _porcupine;
   Timer? _restartTimer;
   FutureOr<void> Function()? _onHelp;
   void Function(bool listening)? _onListeningChanged;
@@ -34,39 +29,10 @@ class VoiceEmergencyService {
     _onHelp = onHelp;
     _onListeningChanged = onListeningChanged;
     _localeId = switch (language) {
-      'Hindi' => 'hi_IN',
-      'Tamil' => 'ta_IN',
+      'Hindi' || 'hi-IN' => 'hi_IN',
+      'Tamil' || 'ta-IN' => 'ta_IN',
       _ => 'en_IN',
     };
-    if (AppConfig.porcupineAccessKey.isNotEmpty) {
-      try {
-        _porcupine = AppConfig.wakeWordKeywordPath.isNotEmpty
-            ? await PorcupineManager.fromKeywordPaths(
-                AppConfig.porcupineAccessKey,
-                [AppConfig.wakeWordKeywordPath],
-                _porcupineResult,
-                sensitivities: const [0.65],
-              )
-            : await PorcupineManager.fromBuiltInKeywords(
-                AppConfig.porcupineAccessKey,
-                const [BuiltInKeyword.JARVIS],
-                _porcupineResult,
-                sensitivities: const [0.65],
-              );
-        _active = true;
-        _triggered = false;
-        await _porcupine!.start();
-        _onListeningChanged?.call(true);
-        return const VoiceEmergencyStartResult(
-          VoiceEmergencyMode.offlineWakeWord,
-        );
-      } catch (_) {
-        await _porcupine?.delete();
-        _porcupine = null;
-        // A missing/expired keyword model must not remove the emergency voice
-        // fallback; Android short-command recognition remains available.
-      }
-    }
     return _startSpeechRecognition();
   }
 
@@ -84,15 +50,6 @@ class VoiceEmergencyService {
     return const VoiceEmergencyStartResult(
       VoiceEmergencyMode.speechRecognition,
     );
-  }
-
-  void _porcupineResult(int _) {
-    if (_triggered) return;
-    _triggered = true;
-    _active = false;
-    _onListeningChanged?.call(false);
-    unawaited(_porcupine?.stop());
-    _onHelp?.call();
   }
 
   Future<void> _listen() async {
@@ -113,7 +70,7 @@ class VoiceEmergencyService {
   void _result(SpeechRecognitionResult result) {
     final words = result.recognizedWords
         .toLowerCase()
-        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '')
+        .replaceAll(RegExp(r'[^\p{L}\p{M}\p{N}\s]', unicode: true), '')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     const commands = {
@@ -157,8 +114,6 @@ class VoiceEmergencyService {
     _restartTimer?.cancel();
     _restartTimer = null;
     _onListeningChanged?.call(false);
-    await _porcupine?.delete();
-    _porcupine = null;
     if (_speech.isListening) await _speech.stop();
   }
 

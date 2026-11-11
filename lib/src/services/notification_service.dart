@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
   NotificationService._();
 
   static final instance = NotificationService._();
+  bool get pushAvailable => Firebase.apps.isNotEmpty;
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
 
@@ -31,6 +33,7 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >()
         ?.createNotificationChannel(emergencyChannel);
+    if (!pushAvailable) return;
     await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
@@ -58,5 +61,27 @@ class NotificationService {
     payload: message.data['alertId'] as String?,
   );
 
-  Future<String?> token() => FirebaseMessaging.instance.getToken();
+  Future<String?> token() async {
+    if (!pushAvailable) return null;
+    try {
+      final settings = await FirebaseMessaging.instance
+          .getNotificationSettings();
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        return null;
+      }
+      return await FirebaseMessaging.instance.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> clearToken() async {
+    if (!pushAvailable) return;
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (_) {
+      // Registration transfers this installation to its next signed-in account.
+    }
+  }
 }

@@ -15,6 +15,7 @@
     "@azure/functions": "^4.9.0",
     "@azure/identity": "^4.13.0",
     "@azure/notification-hubs": "^1.2.3",
+    "@azure/storage-blob": "^12.34.0",
     "@azure/storage-queue": "^12.27.0",
     "@azure/web-pubsub": "^1.2.0",
     "jose": "^6.1.3",

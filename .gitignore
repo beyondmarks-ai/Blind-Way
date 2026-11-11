@@ -34,6 +34,8 @@ migrate_working_dir/
 /coverage/
 backend/node_modules/
 backend/dist/
+live_backend/node_modules/
+live_backend/.env*
 backend/local.settings.json
 infra/*.parameters.local.json
 aws_backend/node_modules/
@@ -41,6 +43,7 @@ aws_backend/dist/
 aws_backend/gcp-wif.json
 android/app/google-services.json
 android/key.properties
+android/maps.properties
 *.jks
 *.keystore
 config/*.json

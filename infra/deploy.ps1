@@ -2,7 +2,12 @@ param(
   [string]$ResourceGroup = 'blind-way-rg',
   [string]$Location = 'centralindia',
   [string]$ResourceLocation = 'centralindia',
-  [string]$FirebaseProjectId = 'blind-way-beyondmarks-2026'
+  [string]$FirebaseProjectId = 'project-8eeef9d3-080a-4f49-95e',
+  [string]$FcmWifProvider = 'projects/896452575262/locations/global/workloadIdentityPools/blindway-azure/providers/azure-function',
+  [string]$FcmServiceAccount = 'blindway-notifications@project-8eeef9d3-080a-4f49-95e.iam.gserviceaccount.com',
+  [Parameter(Mandatory=$true)][string]$OpenAiResourceGroup,
+  [Parameter(Mandatory=$true)][string]$OpenAiAccount,
+  [Parameter(Mandatory=$true)][string]$OpenAiDeployment
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,6 +18,8 @@ az deployment group create `
   --resource-group $ResourceGroup `
   --template-file "$PSScriptRoot\main.bicep" `
   --parameters firebaseProjectId=$FirebaseProjectId location=$ResourceLocation notificationLocation=$ResourceLocation `
+    fcmWifProvider=$FcmWifProvider fcmServiceAccount=$FcmServiceAccount `
+    azureOpenAiResourceGroup=$OpenAiResourceGroup azureOpenAiAccountName=$OpenAiAccount azureOpenAiDeployment=$OpenAiDeployment `
   --output table
 if ($LASTEXITCODE -ne 0) { throw 'Azure resource deployment failed.' }
 

@@ -1,7 +1,8 @@
 {
-  "API_BASE_URL": "https://YOUR_API_ID.execute-api.ap-south-1.amazonaws.com",
-  "SPEECH_STREAM_URL": "https://YOUR_FUNCTION_URL.lambda-url.ap-south-1.on.aws/",
-  "PORCUPINE_ACCESS_KEY": "YOUR_PICOVOICE_ACCESS_KEY",
-  "WAKE_WORD_KEYWORD_PATH": "assets/wake_words/hey_blind_way_android.ppn",
-  "WAKE_WORD_PHRASE": "Hey Blind Way"
+  "API_BASE_URL": "https://YOUR_FUNCTION_APP.azurewebsites.net/api",
+  "SPEECH_STREAM_URL": "",
+  "GEMINI_LIVE_URL": "wss://YOUR_CLOUD_RUN_SERVICE.run.app/live",
+  "CAMERA_ADDRESS": "http://10.67.29.164",
+  "FIREBASE_PROJECT_ID": "project-8eeef9d3-080a-4f49-95e",
+  "GUARDIAN_PUSH_CONFIGURED": false
 }

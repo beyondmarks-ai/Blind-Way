@@ -61,6 +61,16 @@ export interface Alert {
   resolvedAt?: string;
   idempotencyKey: string;
   smsEscalatedAt?: string;
+  pushScheduledAt?: string;
+  blindUserName?: string;
+  triggerSource?: 'button' | 'voice';
+  lastCue?: string;
+  lastDetails?: string;
+  lastRisk?: 'clear' | 'caution' | 'danger' | 'unknown';
+  lastConfidence?: number;
+  snapshotCapturedAt?: string;
+  snapshotKey?: string;
+  locationUpdatedAt?: string;
 }
 
 export interface AlertLocation {

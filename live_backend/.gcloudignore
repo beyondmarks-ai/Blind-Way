@@ -1,0 +1,7 @@
+.git
+node_modules
+test
+*.pcm
+*.wav
+*.mp3
+.env*

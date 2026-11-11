@@ -3,21 +3,15 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
-    "FIREBASE_PROJECT_ID": "blind-way-beyondmarks-2026",
     "ALLOW_DEBUG_AUTH": "true",
-    "AZURE_OPENAI_ENDPOINT": "https://Rakesh.openai.azure.com",
-    "AZURE_OPENAI_DEPLOYMENT": "gpt-5.1",
-    "SARVAM_API_KEY": "set-this-only-in-your-local-environment-or-key-vault",
+    "AZURE_OPENAI_DEPLOYMENT": "YOUR_DEPLOYMENT",
+    "SARVAM_API_KEY": "",
+    "SARVAM_STT_MODEL": "saaras:v4",
     "SARVAM_TTS_MODEL": "bulbul:v3",
     "SARVAM_TTS_SPEAKER": "ritu",
-    "COSMOS_ENDPOINT": "",
     "COSMOS_DATABASE": "blindway",
-    "NOTIFICATION_HUB_CONNECTION_STRING": "",
-    "NOTIFICATION_HUB_NAME": "",
-    "WEB_PUBSUB_CONNECTION_STRING": "",
-    "WEB_PUBSUB_HUB": "alerts",
-    "MSG91_AUTH_KEY": "",
-    "MSG91_TEMPLATE_ID": "",
-    "MSG91_SENDER_ID": ""
+    "FIREBASE_PROJECT_ID": "project-8eeef9d3-080a-4f49-95e",
+    "FCM_WIF_PROVIDER": "",
+    "FCM_SERVICE_ACCOUNT": ""
   }
 }
